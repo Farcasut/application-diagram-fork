@@ -182,4 +182,12 @@
     <module>application-diagram-ui</module>
     <module>application-diagram-xip</module>
   </modules>
+  <profiles>
+    <profile>
+      <id>integration-tests</id>
+      <modules>
+        <module>application-diagram-test</module>
+      </modules>
+    </profile>
+  </profiles>
 </project>
