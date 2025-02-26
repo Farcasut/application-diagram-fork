@@ -40,6 +40,116 @@
   <object>
     <name>Diagram.DiagramMacro</name>
     <number>0</number>
+    <className>XWiki.JavaScriptExtension</className>
+    <guid>aff1e947-48aa-4167-b0bf-68bc4d3a09ba</guid>
+    <class>
+      <name>XWiki.JavaScriptExtension</name>
+      <customClass/>
+      <customMapping/>
+      <defaultViewSheet/>
+      <defaultEditSheet/>
+      <defaultWeb/>
+      <nameField/>
+      <validationScript/>
+      <cache>
+        <cache>0</cache>
+        <defaultValue>long</defaultValue>
+        <disabled>0</disabled>
+        <displayType>select</displayType>
+        <freeText>forbidden</freeText>
+        <largeStorage>0</largeStorage>
+        <multiSelect>0</multiSelect>
+        <name>cache</name>
+        <number>5</number>
+        <prettyName>Caching policy</prettyName>
+        <relationalStorage>0</relationalStorage>
+        <separator> </separator>
+        <separators>|, </separators>
+        <size>1</size>
+        <unmodifiable>0</unmodifiable>
+        <values>long|short|default|forbid</values>
+        <classType>com.xpn.xwiki.objects.classes.StaticListClass</classType>
+      </cache>
+      <code>
+        <contenttype>PureText</contenttype>
+        <disabled>0</disabled>
+        <editor>PureText</editor>
+        <name>code</name>
+        <number>2</number>
+        <prettyName>Code</prettyName>
+        <restricted>0</restricted>
+        <rows>20</rows>
+        <size>50</size>
+        <unmodifiable>0</unmodifiable>
+        <classType>com.xpn.xwiki.objects.classes.TextAreaClass</classType>
+      </code>
+      <name>
+        <disabled>0</disabled>
+        <name>name</name>
+        <number>1</number>
+        <prettyName>Name</prettyName>
+        <size>30</size>
+        <unmodifiable>0</unmodifiable>
+        <classType>com.xpn.xwiki.objects.classes.StringClass</classType>
+      </name>
+      <parse>
+        <disabled>0</disabled>
+        <displayFormType>select</displayFormType>
+        <displayType>yesno</displayType>
+        <name>parse</name>
+        <number>4</number>
+        <prettyName>Parse content</prettyName>
+        <unmodifiable>0</unmodifiable>
+        <classType>com.xpn.xwiki.objects.classes.BooleanClass</classType>
+      </parse>
+      <use>
+        <cache>0</cache>
+        <disabled>0</disabled>
+        <displayType>select</displayType>
+        <freeText>forbidden</freeText>
+        <largeStorage>0</largeStorage>
+        <multiSelect>0</multiSelect>
+        <name>use</name>
+        <number>3</number>
+        <prettyName>Use this extension</prettyName>
+        <relationalStorage>0</relationalStorage>
+        <separator> </separator>
+        <separators>|, </separators>
+        <size>1</size>
+        <unmodifiable>0</unmodifiable>
+        <values>currentPage|onDemand|always</values>
+        <classType>com.xpn.xwiki.objects.classes.StaticListClass</classType>
+      </use>
+    </class>
+    <property>
+      <cache>long</cache>
+    </property>
+    <property>
+      <code>require(['jquery'], function($){
+  $(document).on('xwiki:actions:view', function(){
+    require(['diagram-setup'], function() {
+      require(['jquery', 'diagram-viewer'], function($, diagramViewerPromise) {
+        diagramViewerPromise.done(function() {
+          $('.diagram').viewDiagram();
+        });
+      });
+    });
+  })
+})</code>
+    </property>
+    <property>
+      <name/>
+    </property>
+    <property>
+      <parse>0</parse>
+    </property>
+    <property>
+      <use>onDemand</use>
+    </property>
+  </object>
+  <object>
+    <name>Diagram.DiagramMacro</name>
+    <number>0</number>
     <className>XWiki.WikiMacroClass</className>
     <guid>eeea7d53-d3c0-4102-a27f-9d7b54aaeaa1</guid>
     <class>
@@ -77,7 +187,7 @@
         <separators>|, </separators>
         <size>5</size>
         <unmodifiable>0</unmodifiable>
-        <values>action=Action|doc.reference=Document|icon.theme=Icon theme|locale=Language|rendering.defaultsyntax=Default syntax|rendering.restricted=Restricted|rendering.targetsyntax=Target syntax|request.base=Request base URL|request.cookies|request.headers|request.parameters=Request parameters|request.remoteAddr|request.url=Request URL|request.wiki=Request wiki|user=User|wiki=Wiki</values>
+        <values>action=Action|doc.reference=Document|doc.revision|icon.theme=Icon theme|locale=Language|rendering.defaultsyntax=Default syntax|rendering.restricted=Restricted|rendering.targetsyntax=Target syntax|request.base=Request base URL|request.cookies|request.headers|request.parameters=Request parameters|request.remoteAddr|request.session|request.url=Request URL|request.wiki=Request wiki|sheet|user=User|wiki=Wiki</values>
         <classType>com.xpn.xwiki.objects.classes.StaticListClass</classType>
       </async_context>
       <async_enabled>
@@ -243,13 +353,13 @@
       </visibility>
     </class>
     <property>
-      <async_cached/>
+      <async_cached>0</async_cached>
     </property>
     <property>
       <async_context/>
     </property>
     <property>
-      <async_enabled/>
+      <async_enabled>0</async_enabled>
     </property>
     <property>
       <code>{{velocity output="false"}}
@@ -263,32 +373,20 @@
     #if ($diagramObj)
       #if ($xcontext.action == 'edit' || $xcontext.action == 'export' || $request.xpage == 'print'
           || $xcontext.macro.params.cached == 'true')
-        #set ($pageIndex =  $xcontext.macro.params.pageIndex)
-        #if ($pageIndex &gt;= 1)
-          #getAttachmentName($pageIndex)
-          #set ($fileName = "${attachmentName}.svg")
-          #set ($pngFileName = "${attachmentName}.png")
-          #if ($diagram.getAttachment($fileName))
-            #if ($xcontext.action == 'export' &amp;&amp; $diagramObj.getValue('exportUsingSVG') == 0
-                &amp;&amp; $diagram.getAttachment($pngFileName))
-              #set ($fileName = $pngFileName)
-              #set ($diagramURL = $diagram.getAttachmentURL($fileName, 'download', "v=$!diagram.version"))
-              #set ($output = "{{html clean='false'}}&lt;img src='$diagramURL' alt='$escapetool.xml($diagramTitle)'/&gt;{{/html}}")
-            #elseif ($xcontext.action == 'export')
-              #set ($diagram = $xwiki.getDocument($reference))
-              #set ($output = "{{html}}&lt;div&gt;$diagram.getAttachment($fileName).getContentAsString()&lt;/div&gt;{{/html}}")
-            #else
-              ## If we reached this branch it means that we are in 'view' mode, and we should use the svg.
-              #set ($diagramURL = $diagram.getAttachmentURL($fileName, 'download', "v=$!diagram.version"))
-              #set ($output = "{{html clean='false'}}&lt;img src='$diagramURL' alt='$escapetool.xml($diagramTitle)'/&gt;{{/html}}")
-            #end
-          #else
-            #set ($escapedErrorMessage = $escapetool.xml($services.localization.render('diagram.macro.invalidPageIndex')))
-            #set ($output = "{{warning}}$escapedErrorMessage{{/warning}}")
-          #end
+        #set ($fileName = 'diagram.svg')
+        #set ($pngFileName = 'diagram.png')
+        #if ($xcontext.action == 'export' &amp;&amp; $diagramObj.getValue('exportUsingSVG') == 0
+            &amp;&amp; $diagram.getAttachment($pngFileName))
+          #set ($fileName = $pngFileName)
+          #set ($diagramURL = $diagram.getAttachmentURL($fileName, 'download', "v=$!diagram.version"))
+          #set ($output = "{{html clean='false'}}&lt;img src='$diagramURL' alt='$escapetool.xml($diagramTitle)'/&gt;{{/html}}")
+        #elseif ($xcontext.action == 'export')
+          #set ($diagram = $xwiki.getDocument($reference))
+          #set ($output = "{{html}}&lt;div&gt;$diagram.getAttachment('diagram.svg').getContentAsString()&lt;/div&gt;{{/html}}")
         #else
-          #set ($escapedErrorMessage = $escapetool.xml($services.localization.render('diagram.macro.invalidPageIndex')))
-          #set ($output = "{{warning}}$escapedErrorMessage{{/warning}}")
+          ## If we reached this branch it means that we are in 'view' mode, and we should use the svg.
+          #set ($diagramURL = $diagram.getAttachmentURL($fileName, 'download', "v=$!diagram.version"))
+          #set ($output = "{{html clean='false'}}&lt;img src='$diagramURL' alt='$escapetool.xml($diagramTitle)'/&gt;{{/html}}")
         #end
       #else
         #set ($output = "{{display reference='$services.rendering.escape($reference, $xcontext.macro.doc.syntax)' /}}")
@@ -329,14 +427,6 @@
   #end
 #end
 
-#macro (getAttachmentName $index)
-  #if ($index == 1)
-    #set ($attachmentName = 'diagram')
-  #else
-    #set ($attachmentName = "diagram$index")
-  #end
-#end
-
 #macro (createDiagram $reference)
   {{html clean="false"}}
   #set ($createURL = $xwiki.getURL($reference, 'edit', $escapetool.url({
@@ -352,6 +442,7 @@
 #end
 
 #macro (executeDiagramMacro)
+  #set ($discard = $xwiki.jsx.use('Diagram.DiagramMacro'))
   #set ($reference = $xcontext.macro.params.reference)
   #if ($stringtool.isEmpty($reference))
     #set ($reference = $services.model.createDocumentReference('Diagram', $doc.documentReference.parent))
@@ -390,9 +481,6 @@
     </property>
     <property>
       <defaultCategories/>
-    </property>
-    <property>
-      <defaultCategory>Content</defaultCategory>
     </property>
     <property>
       <description>Displays a diagram.</description>
@@ -569,85 +657,6 @@
     </property>
     <property>
       <type/>
-    </property>
-  </object>
-  <object>
-    <name>Diagram.DiagramMacro</name>
-    <number>2</number>
-    <className>XWiki.WikiMacroParameterClass</className>
-    <guid>d51ad513-036f-4ff9-af91-2285c82741a4</guid>
-    <class>
-      <name>XWiki.WikiMacroParameterClass</name>
-      <customClass/>
-      <customMapping/>
-      <defaultViewSheet/>
-      <defaultEditSheet/>
-      <defaultWeb/>
-      <nameField/>
-      <validationScript/>
-      <defaultValue>
-        <disabled>0</disabled>
-        <name>defaultValue</name>
-        <number>4</number>
-        <prettyName>Parameter default value</prettyName>
-        <size>30</size>
-        <unmodifiable>0</unmodifiable>
-        <classType>com.xpn.xwiki.objects.classes.StringClass</classType>
-      </defaultValue>
-      <description>
-        <disabled>0</disabled>
-        <name>description</name>
-        <number>2</number>
-        <prettyName>Parameter description</prettyName>
-        <restricted>0</restricted>
-        <rows>5</rows>
-        <size>40</size>
-        <unmodifiable>0</unmodifiable>
-        <classType>com.xpn.xwiki.objects.classes.TextAreaClass</classType>
-      </description>
-      <mandatory>
-        <disabled>0</disabled>
-        <displayFormType>select</displayFormType>
-        <displayType>yesno</displayType>
-        <name>mandatory</name>
-        <number>3</number>
-        <prettyName>Parameter mandatory</prettyName>
-        <unmodifiable>0</unmodifiable>
-        <classType>com.xpn.xwiki.objects.classes.BooleanClass</classType>
-      </mandatory>
-      <name>
-        <disabled>0</disabled>
-        <name>name</name>
-        <number>1</number>
-        <prettyName>Parameter name</prettyName>
-        <size>30</size>
-        <unmodifiable>0</unmodifiable>
-        <classType>com.xpn.xwiki.objects.classes.StringClass</classType>
-      </name>
-      <type>
-        <disabled>0</disabled>
-        <name>type</name>
-        <number>5</number>
-        <prettyName>Parameter type</prettyName>
-        <size>60</size>
-        <unmodifiable>0</unmodifiable>
-        <classType>com.xpn.xwiki.objects.classes.StringClass</classType>
-      </type>
-    </class>
-    <property>
-      <defaultValue>1</defaultValue>
-    </property>
-    <property>
-      <description/>
-    </property>
-    <property>
-      <mandatory>0</mandatory>
-    </property>
-    <property>
-      <name>pageIndex</name>
-    </property>
-    <property>
-      <type>java.lang.Integer </type>
     </property>
   </object>
 </xwikidoc>
