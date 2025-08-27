@@ -1,0 +1,62 @@
+<?xml version="1.1" encoding="UTF-8"?>
+
+<!--
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+-->
+
+<xwikidoc version="1.5" reference="Diagram.Inline.editor" locale="">
+  <web>Diagram.Inline</web>
+  <name>editor</name>
+  <language/>
+  <defaultLanguage/>
+  <translation>0</translation>
+  <creator>xwiki:XWiki.Admin</creator>
+  <parent>Diagram.Inline.WebHome</parent>
+  <author>xwiki:XWiki.Admin</author>
+  <contentAuthor>xwiki:XWiki.Admin</contentAuthor>
+  <version>1.1</version>
+  <title>editor</title>
+  <comment/>
+  <minorEdit>false</minorEdit>
+  <syntaxId>xwiki/2.1</syntaxId>
+  <hidden>true</hidden>
+  <content>{{include reference="Diagram.ResourceSelector.WebHome" /}}
+
+{{velocity}}
+#set ($diagramConfig = $request.diagramConfigs)
+#set ($inline = $request.inline)
+#set ($id = $request.id)
+#set ($discard = $xwiki.jsfx.use('uicomponents/widgets/fullScreen.js', true))
+#set ($discard = $xwiki.ssfx.use('uicomponents/widgets/fullScreen.css', true))
+#set ($discard = $xwiki.ssx.use('Diagram.DiagramSheet'))
+#set ($discard = $xwiki.jsx.use('Diagram.DiagramSheet'))
+#set ($discard = $xwiki.jsx.use('Diagram.DiagramViewSheet'))
+#set ($discard = $xwiki.jsx.use('Diagram.DiagramEditSheet'))
+
+
+{{html clean="false"}}
+&lt;div class="diagram-editor loading" data-diagram-config=$diagramConfig&gt;
+    &lt;input class="diagram-content" type="hidden" name="content" value="$escapetool.xml("")" /&gt;
+&lt;/div&gt;
+{{/html}}
+
+
+{{/velocity}}
+</content>
+</xwikidoc>
