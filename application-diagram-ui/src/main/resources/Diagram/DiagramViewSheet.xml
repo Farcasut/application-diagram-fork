@@ -235,7 +235,8 @@
     graphAddClickHandler.apply(this, newArguments);
   };
 
-  var getDiagramViewerConfig = function(diagramContainer) {
+  var getDiagramViewerConfig = function(diagramContainer) { 
+
     var config = {
       title: diagramContainer.data('title'),
       lightbox: false,
@@ -243,10 +244,16 @@
       'toolbar-buttons': {
         edit: {
           title: mxResources.get('edit'),
-          image: Editor.editImage
+          image: Editor.editImage,
+          class: diagramContainer.data('rootClass')
         }
       }
     };
+    if (diagramContainer.data('uniqueClass'))
+    {
+      config['uniqueClass'] = diagramContainer.data('uniqueClass');
+    }
+
     if (diagramContainer.data('reference')) {
       config.toolbar = 'edit ' + config.toolbar;
       var diagramReference = XWiki.Model.resolve(diagramContainer.data('reference'), XWiki.EntityType.DOCUMENT);
@@ -264,6 +271,8 @@
     }
     return config;
   };
+
+
 
   // Fix position of a dialog at the top of the window.
   Dialog.prototype.fixDialogPosition = function() {
@@ -291,6 +300,602 @@
     }
   };
 
+  /* Needed to customize the toolbar so we can add a new behavior for the edit button when an inline diagram uses it */
+  GraphViewer.prototype.addToolbar = function()
+  {
+    var container = this.graph.container;
+    
+    if (this.graphConfig['toolbar-position'] == 'bottom')
+    {
+      container.style.marginBottom = this.toolbarHeight + 'px';
+    }
+    else if (this.graphConfig['toolbar-position'] != 'inline')
+    {
+      container.style.marginTop = this.toolbarHeight + 'px';
+    }
+  
+    // Creates toolbar for viewer
+    var toolbar = container.ownerDocument.createElement('div');
+    toolbar.style.display = 'flex';
+    toolbar.style.alignItems = 'center';
+    toolbar.style.position = 'absolute';
+    toolbar.style.overflow = 'hidden';
+    toolbar.style.boxSizing = 'border-box';
+    toolbar.style.whiteSpace = 'nowrap';
+    toolbar.style.textAlign = 'left';
+    toolbar.style.zIndex = this.toolbarZIndex;
+    toolbar.style.backgroundColor = '#eee';
+    toolbar.style.height = this.toolbarHeight + 'px';
+  
+    if (this.darkMode)
+    {
+      if (Editor.enableCssDarkMode)
+      {
+        toolbar.classList.add('geDarkMode');
+      }
+      else
+      {
+        toolbar.style.filter = 'invert(1)';
+      }
+    }
+  
+    this.toolbar = toolbar;
+    
+    if (this.graphConfig['toolbar-position'] == 'inline')
+    {
+      mxUtils.setPrefixedStyle(toolbar.style, 'transition', 'opacity 100ms ease-in-out');
+      mxUtils.setOpacity(toolbar, 30);
+      
+      // Changes toolbar opacity on hover
+      var fadeThread = null;
+      var fadeThread2 = null;
+      
+      var fadeOut = mxUtils.bind(this, function(delay)
+      {
+        if (fadeThread != null)
+        {
+          window.clearTimeout(fadeThread);
+          fadeThead = null;
+        }
+        
+        if (fadeThread2 != null)
+        {
+          window.clearTimeout(fadeThread2);
+          fadeThead2 = null;
+        }
+        
+        fadeThread = window.setTimeout(mxUtils.bind(this, function()
+        {
+           mxUtils.setOpacity(toolbar, 0);
+          fadeThread = null;
+           
+          fadeThread2 = window.setTimeout(mxUtils.bind(this, function()
+          {
+            toolbar.style.display = 'none';
+            fadeThread2 = null;
+          }), 100);
+        }), delay || 200);
+      });
+      
+      var fadeIn = mxUtils.bind(this, function(opacity)
+      {
+        if (fadeThread != null)
+        {
+          window.clearTimeout(fadeThread);
+          fadeThead = null;
+        }
+        
+        if (fadeThread2 != null)
+        {
+          window.clearTimeout(fadeThread2);
+          fadeThead2 = null;
+        }
+        
+        toolbar.style.display = '';
+        mxUtils.setOpacity(toolbar, opacity ||30);
+      });
+      
+      mxEvent.addListener(this.graph.container, (mxClient.IS_POINTER) ? 'pointermove' : 'mousemove', mxUtils.bind(this, function(evt)
+      {
+        if (!mxEvent.isTouchEvent(evt))
+        {
+          fadeIn(30);
+          fadeOut();
+        }
+      }));
+      
+      mxEvent.addListener(toolbar, (mxClient.IS_POINTER) ? 'pointermove' : 'mousemove', function(evt)
+      {
+        mxEvent.consume(evt);
+      });
+      
+      mxEvent.addListener(toolbar, 'mouseenter', mxUtils.bind(this, function(evt)
+      {
+        fadeIn(100);
+      }));
+  
+      mxEvent.addListener(toolbar, 'mousemove',  mxUtils.bind(this, function(evt)
+      {
+        fadeIn(100);
+        mxEvent.consume(evt);
+      }));
+  
+      mxEvent.addListener(toolbar, 'mouseleave',  mxUtils.bind(this, function(evt)
+      {
+        if (!mxEvent.isTouchEvent(evt))
+        {
+          fadeIn(30);
+        }
+      }));
+      
+      // Shows/hides toolbar for touch devices
+      var graph = this.graph;
+      var tol = graph.getTolerance();
+  
+      graph.addMouseListener(
+      {
+          startX: 0,
+          startY: 0,
+          scrollLeft: 0,
+          scrollTop: 0,
+          mouseDown: function(sender, me)
+          {
+            this.startX = me.getGraphX();
+            this.startY = me.getGraphY();
+            this.scrollLeft = graph.container.scrollLeft;
+            this.scrollTop = graph.container.scrollTop;
+          },
+          mouseMove: function(sender, me) {},
+          mouseUp: function(sender, me)
+          {
+            if (mxEvent.isTouchEvent(me.getEvent()))
+            {
+              if ((Math.abs(this.scrollLeft - graph.container.scrollLeft) &lt; tol &amp;&amp;
+                Math.abs(this.scrollTop - graph.container.scrollTop) &lt; tol) &amp;&amp;
+                (Math.abs(this.startX - me.getGraphX()) &lt; tol &amp;&amp;
+                Math.abs(this.startY - me.getGraphY()) &lt; tol))
+              {
+                if (parseFloat(toolbar.style.opacity || 0) &gt; 0)
+                {
+                  fadeOut();
+                }
+                else
+                {
+                  fadeIn(30);
+                }
+            }
+            }
+          }
+      });
+    }
+    
+    var tokens = this.toolbarItems;
+    var buttonCount = 0;
+    
+    var addButton = mxUtils.bind(this, function(fn, imgSrc, tip, enabled)
+    {
+      var a = this.createToolbarButton(fn, imgSrc, tip, enabled);
+      toolbar.appendChild(a);
+      
+      buttonCount++;
+      
+      return a;
+    });
+  
+    var model = this.graph.getModel();
+    var layersDialog = null;
+    var tagsComponent = null;
+    var tagsDialog = null;
+    var pageInfo = null;
+    
+    for (var i = 0; i &lt; tokens.length; i++)
+    {
+      var token = tokens[i];
+      
+      if (token == 'pages')
+      {
+        pageInfo = container.ownerDocument.createElement('div');
+        pageInfo.style.cssText = 'display:inline-flex;position:relative;align-items:center;' +
+          'padding:4px;font-family:Helvetica,Arial;font-size:12px;;cursor:default;color:#000;'
+        mxUtils.setOpacity(pageInfo, 70);
+        
+        var prevButton = addButton(mxUtils.bind(this, function()
+        {
+          this.selectPage(this.currentPage - 1);
+        }), Editor.previousImage, mxResources.get('previousPage') || 'Previous Page');
+  
+        prevButton.style.borderRightStyle = 'none';
+        prevButton.style.paddingLeft = '0px';
+        prevButton.style.paddingRight = '0px';
+        toolbar.appendChild(pageInfo);
+  
+        var nextButton = addButton(mxUtils.bind(this, function()
+        {
+          this.selectPage(this.currentPage + 1);
+        }), Editor.nextImage, mxResources.get('nextPage') || 'Next Page');
+        
+        nextButton.style.paddingLeft = '0px';
+        nextButton.style.paddingRight = '0px';
+        
+        var update = mxUtils.bind(this, function()
+        {
+          pageInfo.innerText = '';
+          mxUtils.write(pageInfo, (this.currentPage + 1) + ' / ' + this.diagrams.length);
+          pageInfo.style.display = (this.diagrams.length &gt; 1) ? 'inline-flex' : 'none';
+          prevButton.style.display = pageInfo.style.display;
+          nextButton.style.display = pageInfo.style.display;
+        });
+        
+        // LATER: Add event for setGraphXml
+        this.addListener('graphChanged', update);
+        update();
+      }
+      else if (token == 'zoom')
+      {
+        if (this.zoomEnabled)
+        {
+          addButton(mxUtils.bind(this, function()
+          {
+            this.graph.zoomOut();
+          }), Editor.zoomOutImage, mxResources.get('zoomOut') || 'Zoom Out');
+  
+          addButton(mxUtils.bind(this, function()
+          {
+            this.graph.zoomIn();
+          }), Editor.zoomInImage, mxResources.get('zoomIn') || 'Zoom In');
+  
+          addButton(mxUtils.bind(this, function()
+          {
+            this.graph.view.scaleAndTranslate(this.graph.initialViewState.scale,
+              this.graph.initialViewState.translate.x,
+              this.graph.initialViewState.translate.y);
+          }), Editor.zoomFitImage, mxResources.get('fit') || 'Fit');
+        }
+      }
+      else if (token == 'layers')
+      {
+        if (this.layersEnabled)
+        {
+          var layersButton = addButton(mxUtils.bind(this, function(evt)
+          {
+            if (layersDialog != null)
+            {
+              layersDialog.parentNode.removeChild(layersDialog);
+              layersDialog = null;
+            }
+            else
+            {
+              layersDialog = this.graph.createLayersDialog(mxUtils.bind(this, function()
+              {
+                if (this.autoCrop)
+                {
+                  this.crop();
+                }
+                else if (this.autoOrigin)
+                {
+                  var bounds = this.graph.getGraphBounds();
+                  var v = this.graph.view;
+    
+                  if (bounds.x &lt; 0 || bounds.y &lt; 0)
+                  {
+                    this.crop();
+                    this.graph.originalViewState = this.graph.initialViewState;
+  
+                    this.graph.initialViewState = {
+                      translate: v.translate.clone(),
+                      scale: v.scale
+                    };
+                  }
+                  else if (this.graph.originalViewState != null &amp;&amp;
+                    bounds.x / v.scale + this.graph.originalViewState.translate.x - v.translate.x &gt; 0 &amp;&amp;
+                    bounds.y / v.scale + this.graph.originalViewState.translate.y - v.translate.y &gt; 0)
+                  {
+                    v.setTranslate(this.graph.originalViewState.translate.x,
+                      this.graph.originalViewState.translate.y);
+                    this.graph.originalViewState = null;
+                    
+                    this.graph.initialViewState = {
+                      translate: v.translate.clone(),
+                      scale: v.scale
+                    };
+                  }
+                }
+              }));
+              
+              mxEvent.addListener(layersDialog, 'mouseleave', function()
+              {
+                layersDialog.parentNode.removeChild(layersDialog);
+                layersDialog = null;
+              });
+              
+              var r = layersButton.getBoundingClientRect();
+  
+              layersDialog.style.width = '140px';
+              layersDialog.style.padding = '2px 0px 2px 0px';
+              layersDialog.style.border = '1px solid #d0d0d0';
+              layersDialog.style.backgroundColor = '#eee';
+              layersDialog.style.fontFamily = Editor.defaultHtmlFont;
+              layersDialog.style.fontSize = '11px';
+              layersDialog.style.overflowY = 'auto';
+              layersDialog.style.maxHeight = (this.graph.container.clientHeight - this.toolbarHeight - 10) + 'px'
+              layersDialog.style.zIndex = this.toolbarZIndex + 1;
+              layersDialog.style.color = '#000';
+              mxUtils.setOpacity(layersDialog, 85);
+              var origin = mxUtils.getDocumentScrollOrigin(document);
+              layersDialog.style.left = origin.x + r.left - 1 + 'px';
+              layersDialog.style.top = origin.y + r.bottom - 2 + 'px';
+              
+              if (this.darkMode)
+              {
+                layersDialog.style.filter = 'invert(93%) hue-rotate(180deg)';
+              }
+  
+              document.body.appendChild(layersDialog);
+            }
+          }), Editor.layersImage, mxResources.get('layers') || 'Layers');
+          
+          model.addListener(mxEvent.CHANGE, function()
+          {
+            layersButton.style.display = (model.getChildCount(model.root) &gt; 1) ? 'inline-flex' : 'none';
+          });
+          
+          layersButton.style.display = (model.getChildCount(model.root) &gt; 1) ? 'inline-flex' : 'none';
+        }
+      }
+      else if (token == 'tags')
+      {
+        if (this.tagsEnabled)
+        {
+          var tagsButton = addButton(mxUtils.bind(this, function(evt)
+          {
+            if (tagsComponent == null)
+            {
+              tagsComponent = this.graph.createTagsDialog(mxUtils.bind(this, function()
+              {
+                return true;
+              }));
+  
+              tagsComponent.div.getElementsByTagName('div')[0].style.position = '';
+              tagsComponent.div.style.maxHeight = '160px';
+              tagsComponent.div.style.maxWidth = '120px';
+              tagsComponent.div.style.padding = '2px';
+              tagsComponent.div.style.overflow = 'auto';
+              tagsComponent.div.style.height = 'auto';
+              tagsComponent.div.style.position = 'fixed';
+              tagsComponent.div.style.fontFamily = Editor.defaultHtmlFont;
+              tagsComponent.div.style.fontSize = '11px';
+              tagsComponent.div.style.backgroundColor = '#eee';
+              tagsComponent.div.style.color = '#000';
+              tagsComponent.div.style.border = '1px solid #d0d0d0';
+              tagsComponent.div.style.zIndex = this.toolbarZIndex + 1;
+  
+              if (this.darkMode)
+              {
+                tagsComponent.div.style.filter = 'invert(93%) hue-rotate(180deg)';
+              }
+  
+              mxUtils.setOpacity(tagsComponent.div, 85);
+            }
+  
+            if (tagsDialog != null)
+            {
+              tagsDialog.parentNode.removeChild(tagsDialog);
+              tagsDialog = null;
+            }
+            else
+            {
+              tagsDialog = tagsComponent.div;
+              tagsDialog.style.position = 'absolute';
+              
+              mxEvent.addListener(tagsDialog, 'mouseleave', function()
+              {
+                if (tagsDialog != null)
+                {
+                  tagsDialog.parentNode.removeChild(tagsDialog);
+                  tagsDialog = null;
+                }
+              });
+              
+              var r = tagsButton.getBoundingClientRect();
+              var origin = mxUtils.getDocumentScrollOrigin(document);
+              tagsDialog.style.left = origin.x + r.left - 1 + 'px';
+              tagsDialog.style.top = origin.y + r.bottom - 2 + 'px';
+              document.body.appendChild(tagsDialog);
+              tagsComponent.refresh();
+            }
+          }), Editor.tagsImage, mxResources.get('tags') || 'Tags');
+  
+          model.addListener(mxEvent.CHANGE, mxUtils.bind(this, function()
+          {
+            tagsButton.style.display = (this.graph.getAllTags().length &gt; 0) ? 'inline-flex' : 'none';
+  
+            if (tagsDialog != null &amp;&amp; this.graph.getAllTags().length == 0)
+            {
+              tagsDialog.parentNode.removeChild(tagsDialog);
+              tagsDialog = null;
+            }
+          }));
+          
+          tagsButton.style.display = (this.graph.getAllTags().length &gt; 0) ? 'inline-flex' : 'none';
+        }
+      }
+      else if (token == 'lightbox')
+      {
+        if (this.lightboxEnabled)
+        {
+          addButton(mxUtils.bind(this, function()
+          {
+            try
+            {
+              this.showLightbox();
+            }
+            catch (e)
+            {
+              alert(e.message);
+            }
+          }), Editor.fullscreenImage, (mxResources.get('fullscreen') || 'Fullscreen'));
+        }
+      }
+      else if (this.graphConfig['toolbar-buttons'] != null)
+      {
+        var def = this.graphConfig['toolbar-buttons'][token];
+        
+        if (def != null)
+        {
+          def.elem = addButton((def.enabled == null || def.enabled) ? def.handler : function() {},
+            def.image, def.title, def.enabled);
+          if(this.graphConfig['toolbar-buttons'][token]['class'])
+          {
+            // Identifiers for the inline diagram actions.
+            def.elem.classList.add("inlineDiagramEditButton");
+            def.elem.id = this.graphConfig['toolbar-buttons'][token]['class'];
+          }
+        }
+      }
+    }
+    
+    if (this.graph.minimumContainerSize != null)
+    {
+      this.graph.minimumContainerSize.width = buttonCount * 34;
+    }
+    
+    if (this.graphConfig.title != null)
+    {
+      var filename = container.ownerDocument.createElement('div');
+      filename.style.cssText = 'display:inline-flex;position:relative;align-items:center;' +
+        'padding:6px;font-family:Helvetica,Arial;font-size:12px;cursor:default;color:#000;';
+      filename.setAttribute('title', this.graphConfig.titleTooltip || this.graphConfig.title);
+      mxUtils.write(filename, this.graphConfig.title);
+      mxUtils.setOpacity(filename, 70);
+      
+      toolbar.appendChild(filename);
+      this.filename = filename;
+    }
+    
+    this.minToolbarWidth = buttonCount * 34;
+    var prevBorder = container.style.border;
+    
+    var enter = mxUtils.bind(this, function()
+    {
+      toolbar.style.width = (this.graphConfig['toolbar-position'] == 'inline') ? 'auto' :
+        Math.max(this.minToolbarWidth, container.offsetWidth) + 'px';
+      toolbar.style.border = '1px solid #d0d0d0';
+  
+      if (this.graphConfig['toolbar-nohide'] != true)
+      {
+        var r = container.getBoundingClientRect();
+    
+        // Workaround for position:relative set in ResizeSensor
+        var origin = mxUtils.getScrollOrigin(document.body)
+        var b = (document.body.style.position === 'relative') ?
+          document.body.getBoundingClientRect() :
+          {left: -origin.x, top: -origin.y};
+        r = {left: r.left - b.left, top: r.top - b.top,
+          bottom: r.bottom - b.top, right: r.right - b.left};
+        
+        toolbar.style.left = r.left + 'px';
+  
+        if (this.graphConfig['toolbar-position'] == 'bottom')
+        {
+          toolbar.style.top = r.bottom - 1 + 'px';
+        }
+        else
+        {
+          if (this.graphConfig['toolbar-position'] != 'inline')
+          {
+            toolbar.style.marginTop = -this.toolbarHeight + 'px';
+            toolbar.style.top = r.top + 1 + 'px';
+          }
+          else
+          {
+            toolbar.style.top = r.top + 'px';
+          }
+        }
+        
+        if (prevBorder == '1px solid transparent')
+        {
+          container.style.border = '1px solid #d0d0d0';
+        }
+        
+        document.body.appendChild(toolbar);
+  
+        var hideToolbar = mxUtils.bind(this, function()
+        {
+          if (toolbar.parentNode != null)
+          {
+            toolbar.parentNode.removeChild(toolbar);
+          }
+          
+          if (tagsDialog != null)
+          {
+            tagsDialog.parentNode.removeChild(tagsDialog);
+            tagsDialog = null;
+          }
+  
+          if (layersDialog != null)
+          {
+            layersDialog.parentNode.removeChild(layersDialog);
+            layersDialog = null;
+          }
+          
+          container.style.border = prevBorder;
+        });
+        
+        mxEvent.addListener(document, 'mousemove', function(evt)
+        {
+          var source = mxEvent.getSource(evt);
+          
+          while (source != null)
+          {
+            if (source == container ||
+              source == toolbar ||
+              source == layersDialog ||
+              source == tagsDialog)
+            {
+              return;
+            }
+            
+            source = source.parentNode;
+          }
+          
+          hideToolbar();
+        });
+        
+        mxEvent.addListener(document.body, 'mouseleave', function(evt)
+        {
+          hideToolbar();
+        });
+      }
+      else
+      {
+        toolbar.style.top = -this.toolbarHeight + 'px';
+        // geDarkMode already set on container, so remove it from toolbar such that it doesn't invert colors twice
+        toolbar.classList.remove('geDarkMode');
+        container.appendChild(toolbar);
+      }
+    });
+
+    if (this.graphConfig['toolbar-nohide'] != true)
+    {
+      mxEvent.addListener(container, 'mouseenter', enter);
+    }
+    else
+    {
+      enter();
+    }
+    if (this.responsive &amp;&amp; typeof ResizeObserver !== 'undefined')
+    {
+      new ResizeObserver(function()
+      {
+        if (toolbar.parentNode != null)
+        {
+          enter();
+        }
+      }).observe(container)
+    }
+  };
+
+
   $.fn.viewDiagram = function(configOverride) {
     return this.empty().each(function() {
       var fromStorage = false;
@@ -304,6 +909,7 @@
       var config = $.extend(getDiagramViewerConfig($(this)), configOverride);
       var graphViewer = new GraphViewer(this, diagramRootNode, config);
       // Make the diagram title from the tool bar a link to the diagram page.
+      $(graphViewer.toolbar).addClass(config['uniqueClass'])
       if (config.title &amp;&amp; config.reference) {
         var diagramViewURL = new XWiki.Document(config.reference).getURL();
         var diagramLink = $('&lt;a/&gt;').attr('href', diagramViewURL).text(config.title);

@@ -52,10 +52,10 @@
           #set ($docName = "Diagram.Inline.editor")
           #set ($doc = $xwiki.getDocument($docName))
           ##Parameters to get only the body content in the iframe.
-          #set ($extraParams = " ")
+          #set ($extraParams = "xpage=plain&amp;htmlHeaderAndFooter=true&amp;outputTitle=false")
           #set ($escapedConfigs = $escapetool.url($request.diagramConfigs))
           #set ($url = $doc.getURL('view', "diagramConfigs=$escapedConfigs&amp;inline=$request.inline&amp;id=$request.id&amp;$extraParams"))
-          &lt;iframe style="width: 100%; height: 700px; border:none;" src=$url/&gt;
+          &lt;iframe style="width: 100%; height: 100%; border:none;" src=$url/&gt;
         &lt;/div&gt;
       &lt;/div&gt;
       &lt;div class="modal-footer"&gt;
@@ -208,6 +208,15 @@
 
 .geDialog {
   z-index : 2147483647;
+}
+
+#diagram-editor-container {
+  height: 100%;
+  border: solid;
+}
+
+#diagram-editor-container &gt; iframe {
+  height: 100%
 }</code>
     </property>
     <property>

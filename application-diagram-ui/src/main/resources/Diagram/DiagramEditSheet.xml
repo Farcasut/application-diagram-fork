@@ -190,261 +190,265 @@
  * Adds support for editing diagrams stored in XWiki pages.
  */
 define('diagram-store', ['jquery', 'xwiki-meta', 'xwiki-utils', 'diagram-utils', 'diagram-config', 'draw.io',
-    'xwiki-events-bridge'], function($, xm, xutils, diagramUtils, diagramConfig) {
-  var files = [];
-  window._xfiles = files;
-  var createFile = function(ui, input, title, documentReference) {
-    var file = new XWikiFile(ui, input, title, documentReference);
-    files.push(file);
-    return file;
-  };
+  'xwiki-events-bridge'], function($, xm, xutils, diagramUtils, diagramConfig) {
+var files = [];
+window._xfiles = files;
+var createFile = function(ui, input, title, documentReference) {
+  var file = new XWikiFile(ui, input, title, documentReference);
+  files.push(file);
+  return file;
+};
 
-  var XWikiFile = function(ui, input, title, documentReference) {
-    this.input = input;
-    DrawioFile.call(this, ui, input.val());
-    this.title = title;
-    this.documentReference = documentReference;
-  };
+var XWikiFile = function(ui, input, title, documentReference) {
+  this.input = input;
+  DrawioFile.call(this, ui, input.val());
+  this.title = title;
+  this.documentReference = documentReference;
+};
 
-  mxUtils.extend(XWikiFile, DrawioFile);
+mxUtils.extend(XWikiFile, DrawioFile);
 
-  $.extend(XWikiFile.prototype, {
-    getMode: function() {
-      return 'xwiki';
-    },
-    getTitle: function() {
-      return this.title;
-    },
-    getData: function() {
-      return this.input.val();
-    },
-    setData: function(data) {
-      this.input.val(data);
-    },
-    isCompressed: function() {
-      return false;
-    },
-    // TODO: When upgrading the drawio version, ensure that this method is copied from the drawio code and the
-    // `resolveReferences` parameter of the getFileData is set to `true` to prevent incorrect formatting of links to
-    // wiki pages in the diagram content. https://github.com/xwikisas/application-diagram/issues/295
-    createData: function() {
-      var actualPages = this.ui.pages;
+$.extend(XWikiFile.prototype, {
+  getMode: function() {
+    return 'xwiki';
+  },
+  getTitle: function() {
+    return this.title;
+  },
+  getData: function() {
+    return this.input.val();
+  },
+  setData: function(data) {
+    this.input.val(data);
+  },
+  isCompressed: function() {
+    return false;
+  },
+  // TODO: When upgrading the drawio version, ensure that this method is copied from the drawio code and the
+  // `resolveReferences` parameter of the getFileData is set to `true` to prevent incorrect formatting of links to
+  // wiki pages in the diagram content. https://github.com/xwikisas/application-diagram/issues/295
+  createData: function() {
+    var actualPages = this.ui.pages;
 
-      if (this.isRealtime()) {
-        // Uses ownPages for getting file data below
-        this.ui.pages = this.ownPages;
+    if (this.isRealtime()) {
+      // Uses ownPages for getting file data below
+      this.ui.pages = this.ownPages;
 
-        // Updates view state in own current page
-        if (this.ui.currentPage != null) {
-          var ownPage = this.ui.getPageById(
-            this.ui.currentPage.getId(),
-            this.ownPages);
+      // Updates view state in own current page
+      if (this.ui.currentPage != null) {
+        var ownPage = this.ui.getPageById(
+          this.ui.currentPage.getId(),
+          this.ownPages);
 
-          if (ownPage != null) {
-            ownPage.viewState = this.ui.editor.graph.getViewState();
-            ownPage.needsUpdate = true;
-          }
+        if (ownPage != null) {
+          ownPage.viewState = this.ui.editor.graph.getViewState();
+          ownPage.needsUpdate = true;
         }
       }
+    }
 
-      var result = this.ui.getFileData(null, null, null, null, null, null, null, null, this,
-        !this.isCompressed(), true);
-      this.ui.pages = actualPages;
-      return result;
-    },
-    open: function() {
-      var graphXML = this.getData() || '&lt;mxGraphModel/&gt;';
-      this.ui.setFileData(graphXML);
-      this.changeListener = mxUtils.bind(this, function(sender, eventObject) {
-        this.setModified(true);
-      });
-      this.ui.editor.graph.model.addListener(mxEvent.CHANGE, this.changeListener);
+    var result = this.ui.getFileData(null, null, null, null, null, null, null, null, this,
+      !this.isCompressed(), true);
+    this.ui.pages = actualPages;
+    return result;
+  },
+  open: function() {
+    var graphXML = this.getData() || '&lt;mxGraphModel/&gt;';
+    this.ui.setFileData(graphXML);
+    this.changeListener = mxUtils.bind(this, function(sender, eventObject) {
+      this.setModified(true);
+    });
+    this.ui.editor.graph.model.addListener(mxEvent.CHANGE, this.changeListener);
+  }
+});
+
+var forEachOpenedFile = function(visitor) {
+  files.forEach(function(file) {
+    if (file.getUi() &amp;&amp; file.getUi().getCurrentFile() === file) {
+      visitor(file);
     }
   });
+};
 
-  var forEachOpenedFile = function(visitor) {
-    files.forEach(function(file) {
-      if (file.getUi() &amp;&amp; file.getUi().getCurrentFile() === file) {
-        visitor(file);
-      }
-    });
-  };
-
-  var updateFormFields = function(event) {
-    forEachOpenedFile(function(file) {
-      // This is a workaround for https://github.com/jgraph/drawio/issues/490
-      // Stop editing for getting the latest content from diagram
-      file.ui.editor.graph.stopEditing(false);
-      file.updateFileData();
-    });
-  };
-
-  var resetDirty = function() {
-    forEachOpenedFile(function(file) {
-      file.setModified(false);
-    });
-  };
-
-  var pipeDeferred = function(left, right) {
-    left.done($.proxy(right, 'resolve')).fail($.proxy(right, 'reject'));
-  };
-
-  var saveBlobAsImageAttachment = function(blob, fileName, documentReference) {
-    var attachmentReference = new XWiki.AttachmentReference(fileName, documentReference);
-    var uploadMethod = (diagramConfig.isTemporaryUploadSupported) ? xutils.temporaryUploadAttachment : xutils.uploadAttachment;
-    var uploadAttachment = $.proxy(uploadMethod, null, blob, attachmentReference);
-    return uploadAttachment();
-  };
-
-  var imageCache = {};
-  var saveFileAsPNGImageAttachment = function(file, index, originalPage) {
-    var deferred = $.Deferred();
-    let page = file.ui.pages[index];
-    file.ui.selectPage(page, true, null);
-    file.getUi().exportToCanvas(/* callback */ function (canvas) {
-      if (canvas) {
-        try {
-          canvas.toBlob(function (blob) {
-            pipeDeferred(saveBlobAsImageAttachment(blob, `${getXWikiAttachmentName(index)}.png`, file.documentReference), deferred);
-          });
-        } catch(err) {
-          deferred.reject();
-        }
-      } else {
-        deferred.reject();
-      }
-    }, /* width */ null, /* imageCache */ imageCache, /* background */ null, /* error */ function(e) {
-      new XWiki.widgets.Notification(
-        $jsontool.serialize($services.localization.render('diagram.editor.saveAsImageAttachmentError')), 'error');
-      deferred.reject();
-    }, /* limitHeight */ null, /* ignoreSelection */ true, /* scale */ diagramConfig.pdfImageExportZoom);
-    file.ui.selectPage(originalPage, true, null);
-    return deferred.promise();
-  };
-
-  var saveFileAsSVGImageAttachment = function(file, index, originalPage) {
-    var deferred = $.Deferred()
-    let page = file.ui.pages[index];
-    file.ui.selectPage(page, true, null);
-    var svgRoot = file.ui.editor.graph.getSvg(/* background: */ '#ffffff', /* scale: */ null, /* border: */ null,
-      /* nocrop: */ true, /* crisp: */ null, /* ignoreSelection: */ true);
-    file.ui.selectPage(originalPage, true, null);
-    // Embed the images because the PDF exporter might not be able to access them.
-    file.ui.convertImages(svgRoot, function() {
-      var svg = '&lt;?xml version="1.0" encoding="UTF-8"?&gt;\n' +
-        '&lt;!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"&gt;\n' +
-        mxUtils.getXml(svgRoot);
-      var blob = new Blob([svg], {type: 'image/svg+xml'});
-      pipeDeferred(saveBlobAsImageAttachment(blob, `${getXWikiAttachmentName(index)}.svg`, file.documentReference),
-        deferred);
-    }, imageCache);
-    return deferred.promise();
-  };
-
-  var saveFileAsImageAttachments = function(file, index, originalPage) {
+var updateFormFields = function(event) {
+  forEachOpenedFile(function(file) {
     // This is a workaround for https://github.com/jgraph/drawio/issues/490
     // Stop editing for getting the latest content from diagram
     file.ui.editor.graph.stopEditing(false);
-    // We upload the PNG image even if the SVG upload has failed.
-    var pngUpload = $.proxy(saveFileAsPNGImageAttachment, null, file, index, originalPage);
-    return saveFileAsSVGImageAttachment(file, index, originalPage).then(pngUpload, pngUpload);
-  };
+    file.updateFileData();
+  });
+};
 
-  var getXWikiAttachmentName = function (index) {
-    if (index == 0)
-    {
-      // If is the first page we keep the old naming strategy -&gt; diagram.png / diagram.svg
-      return "diagram";
-    }
-    return `diagram${index+1}`;
-  };
 
-  var deleteAllDiagrams = function() {
-    let baseUrl = `/xwiki/rest/diagram/${xm.documentReference.toString()}`;
-    let queryString = $.param({"form_token": xm.form_token});
-    return $.post(`${baseUrl}?${queryString}`);
-  };
 
-  var saveFilesAsImageAttachments = function() {
-    var uploadDeferredList = []
+var resetDirty = function() {
+  forEachOpenedFile(function(file) {
+    file.setModified(false);
+  });
+};
 
-    forEachOpenedFile(function (file) {
-      var uploadDeferred = $.Deferred().resolve();
-      // Get the current page so we know where to return after saving.
-      let originalPage = file.ui.currentPage;
+var pipeDeferred = function(left, right) {
+  left.done($.proxy(right, 'resolve')).fail($.proxy(right, 'reject'));
+};
 
-      file.ui.pages.forEach(function (page, index) {
-        // We do the next upload even if the previous uploads have failed.
-        var nextUpload = $.proxy(saveFileAsImageAttachments, null, file, index,originalPage);
-        uploadDeferred = uploadDeferred.then(nextUpload, nextUpload);
-        uploadDeferredList.push(uploadDeferred.promise());
-      });
-    });
-    // Wait for all deferreds to complete.
-    return $.when.apply($, uploadDeferredList).then(
-      function () {
-        // Resolve the overall promise if all succeeded.
-        return { status: 'success' };
-      },
-      function () {
-        // Reject the overall promise if any failed.
-        return $.Deferred().reject({ status: 'fail' });
+var saveBlobAsImageAttachment = function(blob, fileName, documentReference) {
+  var attachmentReference = new XWiki.AttachmentReference(fileName, documentReference);
+  var uploadMethod = (diagramConfig.isTemporaryUploadSupported) ? xutils.temporaryUploadAttachment : xutils.uploadAttachment;
+  var uploadAttachment = $.proxy(uploadMethod, null, blob, attachmentReference);
+  return uploadAttachment();
+};
+
+var imageCache = {};
+var saveFileAsPNGImageAttachment = function(file, index, originalPage) {
+  var deferred = $.Deferred();
+  let page = file.ui.pages[index];
+  file.ui.selectPage(page, true, null);
+  file.getUi().exportToCanvas(/* callback */ function (canvas) {
+    if (canvas) {
+      try {
+        canvas.toBlob(function (blob) {
+          pipeDeferred(saveBlobAsImageAttachment(blob, `${getXWikiAttachmentName(index)}.png`, file.documentReference), deferred);
+        });
+      } catch(err) {
+        deferred.reject();
       }
-    ).promise();
-  };
-
-  var uploadInProgress = false;
-  // Attach the diagram SVG to the diagram page in order to use it for viewing the diagram and for exporting the diagram
-  // to PDF. For this we need to stop the default save until the upload action is completed and trigger it after.
-  $(document).on('xwiki:actions:beforeSave', function(event, data) {
-    if (!uploadInProgress) {
-      uploadInProgress = true;
-      event.stopPropagation();
-      var saveButton = $(event.target);
-      saveButton.prop('disabled', true);
-      deleteAllDiagrams()
-      .then(saveFilesAsImageAttachments)
-      .catch(function(e) {
-        new XWiki.widgets.Notification(
-          $jsontool.serialize($services.localization.render('diagram.editor.saveAsImageAttachmentError')), 'error');
-      })
-      .always(function() {
-        saveButton.prop('disabled', false).click();
-      });
     } else {
-      uploadInProgress = false;
+      deferred.reject();
+    }
+  }, /* width */ null, /* imageCache */ imageCache, /* background */ null, /* error */ function(e) {
+    new XWiki.widgets.Notification(
+      $jsontool.serialize($services.localization.render('diagram.editor.saveAsImageAttachmentError')), 'error');
+    deferred.reject();
+  }, /* limitHeight */ null, /* ignoreSelection */ true, /* scale */ diagramConfig.pdfImageExportZoom);
+  file.ui.selectPage(originalPage, true, null);
+  return deferred.promise();
+};
+
+var saveFileAsSVGImageAttachment = function(file, index, originalPage) {
+  var deferred = $.Deferred()
+  let page = file.ui.pages[index];
+  file.ui.selectPage(page, true, null);
+  var svgRoot = file.ui.editor.graph.getSvg(/* background: */ '#ffffff', /* scale: */ null, /* border: */ null,
+    /* nocrop: */ true, /* crisp: */ null, /* ignoreSelection: */ true);
+  file.ui.selectPage(originalPage, true, null);
+  // Embed the images because the PDF exporter might not be able to access them.
+  file.ui.convertImages(svgRoot, function() {
+    var svg = '&lt;?xml version="1.0" encoding="UTF-8"?&gt;\n' +
+      '&lt;!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"&gt;\n' +
+      mxUtils.getXml(svgRoot);
+    var blob = new Blob([svg], {type: 'image/svg+xml'});
+    pipeDeferred(saveBlobAsImageAttachment(blob, `${getXWikiAttachmentName(index)}.svg`, file.documentReference),
+      deferred);
+  }, imageCache);
+  return deferred.promise();
+};
+
+var saveFileAsImageAttachments = function(file, index, originalPage) {
+  // This is a workaround for https://github.com/jgraph/drawio/issues/490
+  // Stop editing for getting the latest content from diagram
+  file.ui.editor.graph.stopEditing(false);
+  // We upload the PNG image even if the SVG upload has failed.
+  var pngUpload = $.proxy(saveFileAsPNGImageAttachment, null, file, index, originalPage);
+  return saveFileAsSVGImageAttachment(file, index, originalPage).then(pngUpload, pngUpload);
+};
+
+var getXWikiAttachmentName = function (index) {
+  if (index == 0)
+  {
+    // If is the first page we keep the old naming strategy -&gt; diagram.png / diagram.svg
+    return "diagram";
+  }
+  return `diagram${index+1}`;
+};
+
+var deleteAllDiagrams = function() {
+  let baseUrl = `/xwiki/rest/diagram/${xm.documentReference.toString()}`;
+  let queryString = $.param({"form_token": xm.form_token});
+  return $.post(`${baseUrl}?${queryString}`);
+};
+
+var saveFilesAsImageAttachments = function() {
+  var uploadDeferredList = []
+
+  forEachOpenedFile(function (file) {
+    var uploadDeferred = $.Deferred().resolve();
+    // Get the current page so we know where to return after saving.
+    let originalPage = file.ui.currentPage;
+
+    file.ui.pages.forEach(function (page, index) {
+      // We do the next upload even if the previous uploads have failed.
+      var nextUpload = $.proxy(saveFileAsImageAttachments, null, file, index,originalPage);
+      uploadDeferred = uploadDeferred.then(nextUpload, nextUpload);
+      uploadDeferredList.push(uploadDeferred.promise());
+    });
+  });
+  // Wait for all deferreds to complete.
+  return $.when.apply($, uploadDeferredList).then(
+    function () {
+      // Resolve the overall promise if all succeeded.
+      return { status: 'success' };
+    },
+    function () {
+      // Reject the overall promise if any failed.
+      return $.Deferred().reject({ status: 'fail' });
+    }
+  ).promise();
+};
+
+var uploadInProgress = false;
+// Attach the diagram SVG to the diagram page in order to use it for viewing the diagram and for exporting the diagram
+// to PDF. For this we need to stop the default save until the upload action is completed and trigger it after.
+$(document).on('xwiki:actions:beforeSave', function(event, data) {
+  if (!uploadInProgress) {
+    uploadInProgress = true;
+    event.stopPropagation();
+    var saveButton = $(event.target);
+    saveButton.prop('disabled', true);
+    deleteAllDiagrams()
+    .then(saveFilesAsImageAttachments)
+    .catch(function(e) {
+      new XWiki.widgets.Notification(
+        $jsontool.serialize($services.localization.render('diagram.editor.saveAsImageAttachmentError')), 'error');
+    })
+    .always(function() {
+      saveButton.prop('disabled', false).click();
+    });
+  } else {
+    uploadInProgress = false;
+  }
+});
+
+// We need to update the form fields before the form is validated (for Preview, Save and Save &amp; Continue).
+$(document).on('xwiki:actions:beforePreview xwiki:actions:beforeSave', updateFormFields);
+
+$(document).on('click', '#saveDiagramBtn', updateFormFields);
+
+var submitInProgress = false;
+// Disable the leave confirmation when the form action buttons are used.
+$(document).on('xwiki:actions:cancel xwiki:actions:preview xwiki:actions:save xwiki:document:saved',
+  function(event, data) {
+    // We reset the dirty field on 'xwiki:actions:save' only if it's not a Save &amp; Continue. Otherwise we wait for
+    // 'xwiki:document:saved' to be sure the document was saved.
+    if (!data || !data['continue']) {
+      submitInProgress = event.type === 'xwiki:actions:preview' || event.type === 'xwiki:actions:save';
+      resetDirty();
     }
   });
 
-  // We need to update the form fields before the form is validated (for Preview, Save and Save &amp; Continue).
-  $(document).on('xwiki:actions:beforePreview xwiki:actions:beforeSave', updateFormFields);
+$(window).on('beforeunload', function(event) {
+  // Update the form fields before the page is unloaded in order to allow the browser to cache their values
+  // (Back-Forward and Soft Reload cache). The form fields have already been updated (for validation) if a submit
+  // is currently in progress.
+  if (!submitInProgress) {
+    updateFormFields();
+  } else {
+    submitInProgress = false;
+  }
+});
 
-  var submitInProgress = false;
-  // Disable the leave confirmation when the form action buttons are used.
-  $(document).on('xwiki:actions:cancel xwiki:actions:preview xwiki:actions:save xwiki:document:saved',
-    function(event, data) {
-      // We reset the dirty field on 'xwiki:actions:save' only if it's not a Save &amp; Continue. Otherwise we wait for
-      // 'xwiki:document:saved' to be sure the document was saved.
-      if (!data || !data['continue']) {
-        submitInProgress = event.type === 'xwiki:actions:preview' || event.type === 'xwiki:actions:save';
-        resetDirty();
-      }
-    });
-
-  $(window).on('beforeunload', function(event) {
-    // Update the form fields before the page is unloaded in order to allow the browser to cache their values
-    // (Back-Forward and Soft Reload cache). The form fields have already been updated (for validation) if a submit
-    // is currently in progress.
-    if (!submitInProgress) {
-      updateFormFields();
-    } else {
-      submitInProgress = false;
-    }
-  });
-
-  return {
-    createFile: createFile
-  };
+return {
+  createFile: createFile
+};
 });</code>
     </property>
     <property>
@@ -553,48 +557,48 @@ define('diagram-link-editor', [
   'diagram-link-handler',
   'draw.io',
   'resourceSelector'
-], function($, diagramLinkHandler) {
+], function ($, diagramLinkHandler) {
   /**
    * Override in order to change the Element type check from a.constructor !== Element, which was failing due to a
    * collision with the PrototypeJS's own implementation of the standard Element.
    * See http://api.prototypejs.org/dom/Element/new/index.html. This code is taken from the minified version of
    * mxClient.js and should be removed after PrototypeJS is no longer loaded.
    */
-  mxUtils.isNode = function(a, b, c, d) {
+  mxUtils.isNode = function (a, b, c, d) {
     return null == a || a.nodeType !== Node.ELEMENT_NODE || null != b &amp;&amp;
       a.nodeName.toLowerCase() != b.toLowerCase() ? !1 : null == c || a.getAttribute(c) == d;
   };
 
-/**
- * TODO: When upgrading, make sure to check if this method has changed.
- * This method was copied directly from draw.io, and the only change made was the call to this.showDialog.
- * Both the width and height were modified to fit better within the XWiki UI.
- */
-EditorUi.prototype.showBackgroundImageDialog = function (apply, img, color, showColor) {
-  apply = (apply != null) ? apply : mxUtils.bind(this, function (image, failed, color, shadowVisible) {
-    if (!failed) {
-      var change = new ChangePageSetup(this, (showColor) ? color : null, image);
-      change.ignoreColor = !showColor;
-      if (shadowVisible != null &amp;&amp;  showColor) {
-        change.shadowVisible = shadowVisible;
+  /**
+   * TODO: When upgrading, make sure to check if this method has changed.
+   * This method was copied directly from draw.io, and the only change made was the call to this.showDialog.
+   * Both the width and height were modified to fit better within the XWiki UI.
+   */
+  EditorUi.prototype.showBackgroundImageDialog = function (apply, img, color, showColor) {
+    apply = (apply != null) ? apply : mxUtils.bind(this, function (image, failed, color, shadowVisible) {
+      if (!failed) {
+        var change = new ChangePageSetup(this, (showColor) ? color : null, image);
+        change.ignoreColor = !showColor;
+        if (shadowVisible != null &amp;&amp; showColor) {
+          change.shadowVisible = shadowVisible;
+        }
+        this.editor.graph.model.execute(change);
       }
-      this.editor.graph.model.execute(change);
-    }
-  });
+    });
 
-  var dlg = new BackgroundImageDialog(this, apply, img, color, showColor);
-  this.showDialog(dlg.container, 420, (showColor) ? 260 : 240, true, true);
-  dlg.init();
-};
+    var dlg = new BackgroundImageDialog(this, apply, img, color, showColor);
+    this.showDialog(dlg.container, 420, (showColor) ? 260 : 240, true, true);
+    dlg.init();
+  };
 
 
-  EditorUi.prototype.showLinkDialog = function(value, selectLabel, callback, showNewWindowOption, linkTarget) {
+  EditorUi.prototype.showLinkDialog = function (value, selectLabel, callback, showNewWindowOption, linkTarget) {
     var resourceReference = diagramLinkHandler.getResourceReferenceFromCustomLink(value);
     // We append the modal to the body element in order to fix Issue #108: "Inserting a link in full screen mode is not
     // possible".
     $('#diagramLinkModal').appendTo('body').selectResource(resourceReference, {
       selectLabel: selectLabel
-    }).done(function(resourceReference) {
+    }).done(function (resourceReference) {
       callback(diagramLinkHandler.getCustomLinkFromResourceReference(resourceReference), null, linkTarget);
     });
   };
@@ -602,13 +606,13 @@ EditorUi.prototype.showBackgroundImageDialog = function (apply, img, color, show
   // For some cases, to consider wrapping or overflow, w might be altered and we need to keep the initial value as
   // it was from bounds.width of the base mxText node.
   var originalText = mxSvgCanvas2D.prototype.text;
-  mxSvgCanvas2D.prototype.text = function(x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation, dir) {
+  mxSvgCanvas2D.prototype.text = function (x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation, dir) {
     this.state.initialWidth = w;
     return originalText.apply(this, arguments);
   };
 
   // Don't add warning when the viewer doesn't support SVG 1.1, since we create a fallback for foreignObjects.
-  Graph.prototype.addForeignObjectWarning = function(canvas, root) {
+  Graph.prototype.addForeignObjectWarning = function (canvas, root) {
     // Do nothing.
   }
 
@@ -641,11 +645,11 @@ EditorUi.prototype.showBackgroundImageDialog = function (apply, img, color, show
   // Overwrite Graph.getSvg in order to replace XWiki custom links with absolute URLs.
   // Also fix the text fallback for viewers with no support for foreignObjects.
   var originalGraphGetSVG = Graph.prototype.getSvg;
-  Graph.prototype.getSvg = function(background, scale, border, nocrop, crisp, ignoreSelection, showText, imgExport,
-      linkTarget, hasShadow, incExtFonts, keepTheme, exportType, cells) {
+  Graph.prototype.getSvg = function (background, scale, border, nocrop, crisp, ignoreSelection, showText, imgExport,
+    linkTarget, hasShadow, incExtFonts, keepTheme, exportType, cells) {
     imgExport = imgExport || this.createSvgImageExport();
     var originalGetLinkForCellState = imgExport.getLinkForCellState;
-    imgExport.getLinkForCellState = function() {
+    imgExport.getLinkForCellState = function () {
       var result = originalGetLinkForCellState.apply(this, arguments);
       if (diagramLinkHandler.isXWikiCustomLink(result)) {
         result = diagramLinkHandler.getURLFromCustomLink(result);
@@ -655,10 +659,10 @@ EditorUi.prototype.showBackgroundImageDialog = function (apply, img, color, show
       return result;
     }
     var originalDrawState = imgExport.drawState;
-    imgExport.drawState = function(state, canvas) {
+    imgExport.drawState = function (state, canvas) {
       var originalCreateAlternateContent = canvas.createAlternateContent;
-      canvas.createAlternateContent = function(fo, x, y, w, h, str, align, valign, wrap, format, overflow, clip,
-          rotation) {
+      canvas.createAlternateContent = function (fo, x, y, w, h, str, align, valign, wrap, format, overflow, clip,
+        rotation) {
         if (format === 'html') {
           // Keep only the text content.
           str = $('&lt;div/&gt;').html(str).text() || this.foAltText;
@@ -681,36 +685,36 @@ EditorUi.prototype.showBackgroundImageDialog = function (apply, img, color, show
 /**
  * Adds support for using XWiki image attachments in diagrams.
  */
-define('diagram-image-editor', ['xwiki-utils', 'diagram-link-handler', 'draw.io'], function(xutils, diagramLinkHandler) {
+define('diagram-image-editor', ['xwiki-utils', 'diagram-link-handler', 'draw.io'], function (xutils, diagramLinkHandler) {
   // Fix the base URL used when exporting the diagram as image.
   var originalCreateImageUrlConverter = EditorUi.prototype.createImageUrlConverter;
-  EditorUi.prototype.createImageUrlConverter = function() {
+  EditorUi.prototype.createImageUrlConverter = function () {
     var converter = originalCreateImageUrlConverter.call(this);
-    converter.convert = function(src) {
+    converter.convert = function (src) {
       // Use baseDomain instead of baseUrl to detect external URLs.
       if (src &amp;&amp; (src.substr(0, 7) === 'http://' || src.substr(0, 8) === 'https://') &amp;&amp;
-          src.substr(0, converter.baseDomain.length) !== converter.baseDomain) {
+        src.substr(0, converter.baseDomain.length) !== converter.baseDomain) {
         src = PROXY_URL + '?url=' + encodeURIComponent(src);
       }
       return src;
     };
     return converter;
   };
-        
+
   // Override for uploading the image as attachment instead of encode it to Base64.
   var originalImportFiles = EditorUi.prototype.importFiles;
-  EditorUi.prototype.importFiles = function(files, x, y, maxSize, fn, resultFn, filterFn, barrierFn, resizeDialog,
-      maxBytes, resampleThreshold, ignoreEmbeddedXml, evt) {
+  EditorUi.prototype.importFiles = function (files, x, y, maxSize, fn, resultFn, filterFn, barrierFn, resizeDialog,
+    maxBytes, resampleThreshold, ignoreEmbeddedXml, evt) {
     let importFilesArgs = arguments;
     if (fn) {
       let editorUi = this;
       importFilesArgs = Array.prototype.slice.call(arguments);
       // This is the call back function responsible to insert the image.
-      importFilesArgs[4] = function(data, mimeType, x, y, w, h, filename) {
+      importFilesArgs[4] = function (data, mimeType, x, y, w, h, filename) {
         if (data.substring(0, 5) == 'data:') {
           let fnArgs = Array.prototype.slice.call(arguments);
           let fileBase64Data = data.substring(data.indexOf(',') + 1);
-          xutils.uploadAttachment(editorUi.base64ToBlob(fileBase64Data, mimeType), filename).done(function() {
+          xutils.uploadAttachment(editorUi.base64ToBlob(fileBase64Data, mimeType), filename).done(function () {
             // Include the attachment reference in the URL using the fragment identifier in order to be able to use it
             // when saving the diagram (we want to save the attachment reference not the attachment URL).
             let resourceReference = {
@@ -731,8 +735,8 @@ define('diagram-image-editor', ['xwiki-utils', 'diagram-link-handler', 'draw.io'
 
   // Add support for inserting images by specifying the XWiki attachment reference.
   var originalShowImageDialog = EditorUi.prototype.showImageDialog;
-  EditorUi.prototype.showImageDialog = function(title, value, fn, ignoreExisting, convertDataUri, withCrop,
-      initClipPath) {
+  EditorUi.prototype.showImageDialog = function (title, value, fn, ignoreExisting, convertDataUri, withCrop,
+    initClipPath) {
     var showImageDialogArgs = Array.prototype.slice.call(arguments);
     var customLink = diagramLinkHandler.getCustomLinkFromURL(value);
     if (customLink) {
@@ -740,7 +744,7 @@ define('diagram-image-editor', ['xwiki-utils', 'diagram-link-handler', 'draw.io'
       showImageDialogArgs[1] = customLink;
     }
     if (typeof fn === 'function') {
-      showImageDialogArgs[2] = function(newValue, width, height) {
+      showImageDialogArgs[2] = function (newValue, width, height) {
         var fnArgs = Array.prototype.slice.call(arguments);
         if (diagramLinkHandler.isXWikiCustomLink(newValue)) {
           // Save the actual URL, but keep the custom link as fragment identifier.
@@ -755,7 +759,7 @@ define('diagram-image-editor', ['xwiki-utils', 'diagram-link-handler', 'draw.io'
   // This function is used by the image dialog to preload the images before inserting them. We have to overwrite it in
   // order to make it use the actual URL for XWiki image attachments.
   var originalLoadImage = EditorUi.prototype.loadImage;
-  EditorUi.prototype.loadImage = function(uri, onload, onerror) {
+  EditorUi.prototype.loadImage = function (uri, onload, onerror) {
     var loadImageArgs = Array.prototype.slice.call(arguments);
     if (diagramLinkHandler.isXWikiCustomLink(uri)) {
       loadImageArgs[0] = diagramLinkHandler.getURLFromCustomLink(uri);
@@ -767,16 +771,16 @@ define('diagram-image-editor', ['xwiki-utils', 'diagram-link-handler', 'draw.io'
 /**
  * Customizes the diagram export as URL and the diagram import from URL.
  */
-define('diagram-url-io', ['diagram-utils', 'draw.io'], function(diagramUtils) {
-  var urlParam = function(parameter, url) {
+define('diagram-url-io', ['diagram-utils', 'draw.io'], function (diagramUtils) {
+  var urlParam = function (parameter, url) {
     var results = new RegExp('[\?&amp;]' + parameter + '=([^&amp;#]*)').exec(url);
     if (results === null) {
-       return null;
+      return null;
     }
     return decodeURIComponent(results[1]);
   };
 
-  var getParameterValueFromURL = function(parameter, url) {
+  var getParameterValueFromURL = function (parameter, url) {
     if (typeof URLSearchParams === 'function') {
       return new URL(url, window.location.href).searchParams.get(parameter);
     }
@@ -785,7 +789,7 @@ define('diagram-url-io', ['diagram-utils', 'draw.io'], function(diagramUtils) {
   };
 
   // Custom diagram import from URL.
-  var loadUrl = function(url) {
+  var loadUrl = function (url) {
     var diagramXML = null;
     let exportedUrl = getParameterValueFromURL('url', url);
     if (exportedUrl) {
@@ -796,8 +800,8 @@ define('diagram-url-io', ['diagram-utils', 'draw.io'], function(diagramUtils) {
 
   // Custom diagram export as URL (using the current host).
   var originalCreateLink = EditorUi.prototype.createLink;
-  EditorUi.prototype.createLink = function(linkTarget, linkColor, allPages, lightbox, editLink, layers, url, ignoreFile,
-      params, useOpenParameter) {
+  EditorUi.prototype.createLink = function (linkTarget, linkColor, allPages, lightbox, editLink, layers, url, ignoreFile,
+    params, useOpenParameter) {
     let rawURL = originalCreateLink.apply(this, arguments);
     // Do not include '#' because it's automatically added by getURL function below.
     let documentFragmentIndex = rawURL.indexOf('#');
@@ -806,7 +810,7 @@ define('diagram-url-io', ['diagram-utils', 'draw.io'], function(diagramUtils) {
       let queryString = '';
       let queryStringIndex = rawURL.indexOf('?');
       if (queryStringIndex &gt; -1) {
-        queryString = rawURL.substring (queryStringIndex + 1, documentFragmentIndex);
+        queryString = rawURL.substring(queryStringIndex + 1, documentFragmentIndex);
       }
       // Append source parameter to the query
       queryString += '&amp;source=url';
@@ -825,8 +829,8 @@ define('diagram-url-io', ['diagram-utils', 'draw.io'], function(diagramUtils) {
   * In case external services are disabled, stop the features that require it (export of pdf from diagram editor
   * or png / jpeg export on IE) and show an info dialog.
   */
-define('diagram-external-services', ['jquery', 'diagram-config', 'draw.io'], function($, diagramConfig) {
-  var showDisabledServicesDialog = function(editorUi) {
+define('diagram-external-services', ['jquery', 'diagram-config', 'draw.io'], function ($, diagramConfig) {
+  var showDisabledServicesDialog = function (editorUi) {
     var errorMessage = $('&lt;div&gt;&lt;/div')
       .html($jsontool.serialize($services.localization.render('diagram.editor.disabledExternalServices')));
 
@@ -839,8 +843,8 @@ define('diagram-external-services', ['jquery', 'diagram-config', 'draw.io'], fun
 
   // This is used from File -&gt; Export as.
   var originalCreateDownloadRequest = EditorUi.prototype.createDownloadRequest;
-  EditorUi.prototype.createDownloadRequest = function(filename, format, ignoreSelection, base64, transparent,
-      currentPage, scale, border, grid, includeXml, pageRange, w, h) {
+  EditorUi.prototype.createDownloadRequest = function (filename, format, ignoreSelection, base64, transparent,
+    currentPage, scale, border, grid, includeXml, pageRange, w, h) {
     if (diagramConfig.disableExternalServices) {
       showDisabledServicesDialog(this);
       return;
@@ -850,9 +854,9 @@ define('diagram-external-services', ['jquery', 'diagram-config', 'draw.io'], fun
 
   // This is used from File -&gt; Export as -&gt; Advanced...
   var originalExportFile = ExportDialog.exportFile;
-  ExportDialog.exportFile = function(editorUi, name, format, bg, s, b, dpi, grid) {
+  ExportDialog.exportFile = function (editorUi, name, format, bg, s, b, dpi, grid) {
     if (diagramConfig.disableExternalServices &amp;&amp; (format == 'pdf' ||
-        (['png', 'jpg', 'jpeg'].indexOf(format) != -1 &amp;&amp; !editorUi.isExportToCanvas()))) {
+      (['png', 'jpg', 'jpeg'].indexOf(format) != -1 &amp;&amp; !editorUi.isExportToCanvas()))) {
       showDisabledServicesDialog(editorUi);
       return;
     }
@@ -883,7 +887,7 @@ define('diagram-editor', [
   'diagram-link-editor',
   'diagram-image-editor',
   'diagram-external-services'
-], function($, diagramStore, diagramUtils, diagramUrlIO, diagramConfig, l10n) {
+], function ($, diagramStore, diagramUtils, diagramUrlIO, diagramConfig, l10n) {
 
   // These variables are used to decide if an image should be uploaded at original resolution or
   // should be declined for being too big.
@@ -894,7 +898,7 @@ define('diagram-editor', [
   //
   // Diagram Editor Constructor.
   //
-  var createDiagramEditor = function(options) {
+  var createDiagramEditor = function (options) {
     options = options || {};
     // This is needed since we do not use drafts and it would create the file to soon, leading to the file being opened
     // in a new window.
@@ -913,7 +917,7 @@ define('diagram-editor', [
     return editorUI;
   };
 
-  var fixEditorUI = function(editorUI) {
+  var fixEditorUI = function (editorUI) {
     cleanMenu(editorUI);
     renameMenu(editorUI);
     fixKeyboardShortcutsAction(editorUI);
@@ -926,10 +930,10 @@ define('diagram-editor', [
     }
   };
 
-  var fixLoadUrl = function(editorUI) {
+  var fixLoadUrl = function (editorUI) {
     // Custom diagram import from URL.
     var originalLoadUrl = editorUI.editor.loadUrl;
-    editorUI.editor.loadUrl = function(url, success, error, forceBinary, retry, dataUriPrefix, noBinary, headers) {
+    editorUI.editor.loadUrl = function (url, success, error, forceBinary, retry, dataUriPrefix, noBinary, headers) {
       var diagramXML = diagramUrlIO.loadUrl(url);
       if (diagramXML != null) {
         return success(diagramXML);
@@ -941,21 +945,21 @@ define('diagram-editor', [
   //
   // Change the service name in order to disable notifications.
   //
-  EditorUi.prototype.getServiceName = function() {
+  EditorUi.prototype.getServiceName = function () {
     return 'xwiki.com';
   };
 
   // Don't change the document title.
-  App.prototype.updateDocumentTitle = function() {};
+  App.prototype.updateDocumentTitle = function () { };
 
   //
   // Add support for disabling an entire sub-menu.
   //
   var originalAddSubmenu = Menus.prototype.addSubmenu;
-  Menus.prototype.addSubmenu = function(name, menu, parent, label) {
+  Menus.prototype.addSubmenu = function (name, menu, parent, label) {
     var subMenu = this.get(name);
     if (subMenu &amp;&amp; subMenu.isEnabled() !== false) {
-     return originalAddSubmenu.apply(this, arguments);
+      return originalAddSubmenu.apply(this, arguments);
     }
   };
 
@@ -964,14 +968,14 @@ define('diagram-editor', [
    * Map with all the menu items that we want to have a title.
    */
   const titleMap = new Map([
-      ['print', l10n['print.title']]
+    ['print', l10n['print.title']]
   ]);
 
   /*
    * Update the title of the menu items.
    */
   var originalAddMenuItem = Menus.prototype.addMenuItem;
-  Menus.prototype.addMenuItem = function(menu, key, parent, trigger, sprite, label) {
+  Menus.prototype.addMenuItem = function (menu, key, parent, trigger, sprite, label) {
     let item = originalAddMenuItem.apply(this, arguments);
     if (item != null &amp;&amp; titleMap.has(key)) {
       item.title = titleMap.get(key);
@@ -981,7 +985,7 @@ define('diagram-editor', [
 
   // Remove the language picker because the diagram editor is configured to use the XWiki language.
   var originalCreateMenubar = Menus.prototype.createMenubar;
-  Menus.prototype.createMenubar = function(container) {
+  Menus.prototype.createMenubar = function (container) {
     delete this.menus['language'];
     return originalCreateMenubar.apply(this, arguments);
   }
@@ -990,7 +994,7 @@ define('diagram-editor', [
   // Add support for not displaying 'browser' option from 'Import from' sub-menu
   //
   var originalAddItem = mxPopupMenu.prototype.addItem;
-  mxPopupMenu.prototype.addItem = function(title, image, funct, parent, iconCls, enabled, active) {
+  mxPopupMenu.prototype.addItem = function (title, image, funct, parent, iconCls, enabled, active) {
     if (title === (mxResources.get('browser') + '...') &amp;&amp; parent &amp;&amp; parent.innerText === 'Import from') {
       return null;
     }
@@ -1000,14 +1004,14 @@ define('diagram-editor', [
   //
   // Rename menu options to fit our needs.
   //
-  var renameMenu = function(editorUI) {
+  var renameMenu = function (editorUI) {
     const menuItems = [
       // File menu
       ['print', l10n['print.label']]
     ];
 
     // Iterate over the array of tuples
-    menuItems.forEach(function([menuKey, newLabel]) {
+    menuItems.forEach(function ([menuKey, newLabel]) {
       var action = editorUI.actions.actions[menuKey];
       if (action) {
         action.label = newLabel;
@@ -1018,18 +1022,18 @@ define('diagram-editor', [
   //
   // Clean the editor menu by removing the features that are not needed.
   //
-  var cleanMenu = function(editorUI) {
+  var cleanMenu = function (editorUI) {
     // Disable and hide some of the menu entries.
     [
       // File menu
       'synchronize', 'new', 'open', 'save', 'saveAs', 'rename', 'makeCopy', 'close',
       // Extras menu
       'autosave', 'showStartScreen', 'plugins', 'offline', 'chromeApp',
-       // Help menu
+      // Help menu
       'downloadDesktop', 'useOffline',
       // ExportAs
       'exportHtml', 'exportPdf'
-    ].forEach(function(actionName) {
+    ].forEach(function (actionName) {
       var action = editorUI.actions.actions[actionName];
       if (action) {
         action.enabled = action.visible = false;
@@ -1042,7 +1046,7 @@ define('diagram-editor', [
       'openFrom', 'openRecent', 'publish', 'embed',
       // Extras menu
       'theme'
-    ].forEach(function(name) {
+    ].forEach(function (name) {
       var subMenu = editorUI.menus.get(name);
       if (subMenu) {
         subMenu.enabled = subMenu.visible = false;
@@ -1054,7 +1058,7 @@ define('diagram-editor', [
   // Fix the side bar tool tip: the tool tip position is computed as if the editor takes the full screen.
   //
   var originalGetTooltipOffset = Sidebar.prototype.getTooltipOffset;
-  Sidebar.prototype.getTooltipOffset = function(elt, bounds) {
+  Sidebar.prototype.getTooltipOffset = function (elt, bounds) {
     var fullScreenCoordinates = originalGetTooltipOffset.apply(this, arguments);
     // Adjust the tool tip coordinates with the editor offset.
     var offset = $(this.editorUi.container).offsetParent().offset();
@@ -1065,8 +1069,8 @@ define('diagram-editor', [
   // Consider the basePath for the shapes added in the left panel.
   //
   var oldCreateVertexTemplateEntry = Sidebar.prototype.createVertexTemplateEntry;
-  Sidebar.prototype.createVertexTemplateEntry = function(style, width, height, value, title, showLabel, showTitle,
-      allowCellsInserted, showTooltip, clickFn, thumbWidth, thumbHeight) {
+  Sidebar.prototype.createVertexTemplateEntry = function (style, width, height, value, title, showLabel, showTitle,
+    allowCellsInserted, showTooltip, clickFn, thumbWidth, thumbHeight) {
     style = style.replace(/(image=)(img\/lib)/g, '$1' + diagramConfig.drawIOBasePath + '$2');
     return oldCreateVertexTemplateEntry.call(this, style, width, height, value, title, showLabel, showTitle,
       allowCellsInserted, showTooltip, clickFn, thumbWidth, thumbHeight);
@@ -1075,11 +1079,11 @@ define('diagram-editor', [
   //
   // Overwrite the Keyboard Shortcuts action because it uses the wrong URL.
   //
-  var fixKeyboardShortcutsAction = function(editorUI) {
+  var fixKeyboardShortcutsAction = function (editorUI) {
     var keyboardShortcutsAction = editorUI.actions.get('keyboardShortcuts');
     if (keyboardShortcutsAction) {
       var originalFunct = keyboardShortcutsAction.funct;
-      keyboardShortcutsAction.funct = function() {
+      keyboardShortcutsAction.funct = function () {
         if (mxClient.IS_SVG) {
           window.open(diagramEditorBasePath + 'shortcuts.svg');
         } else {
@@ -1092,22 +1096,22 @@ define('diagram-editor', [
   //
   // Remove the compact mode toggle and update the position of the remaining buttons.
   //
-  var removeCompactModeToggle = function(editorUI) {
+  var removeCompactModeToggle = function (editorUI) {
     if (typeof editorUI.toggleCompactMode === 'function') {
       editorUI.toggleCompactMode(/* visible: */ false);
       var buttons = $(editorUI.container).find('.geToolbarContainer &gt; a.geButton');
       buttons.last().remove();
-      buttons.css('right', function(index, value) {
+      buttons.css('right', function (index, value) {
         return (parseInt(value) - 16) + 'px';
       });
     }
   };
 
   var fullScreen = new XWiki.widgets.FullScreen();
-  var fixFullScreenToggle = function(editorUI) {
+  var fixFullScreenToggle = function (editorUI) {
     mxEvent.removeAllListeners(editorUI.fullscreenElement);
     editorUI.container._x_fullScreenActivator = editorUI.fullscreenElement;
-    $(editorUI.fullscreenElement).click(function(event) {
+    $(editorUI.fullscreenElement).click(function (event) {
       event.preventDefault();
       var isFullScreen = $(editorUI.container).parent('.fullScreenWrapper').length &gt; 0;
       if (isFullScreen) {
@@ -1129,19 +1133,18 @@ define('diagram-editor', [
   // Add the type of the buttons manually to stop the default submit. The preventDefault used in editDiagram is not
   // working for these since in draw.io code is called stopPropagation.
   //
-  var fixEditorButtons = function(editor) {
-    editor.find('button:not([type])').each(function() {
+  var fixEditorButtons = function (editor) {
+    editor.find('button:not([type])').each(function () {
       $(this).attr('type', 'button');
     });
   };
 
-  var removeThemeButton = function() {
+  var removeThemeButton = function () {
     $('.geAdaptiveAsset[title="Theme"]').remove();
   };
-
   // mxRuler adds the ruler to the document body instead of adding it to the editor container.
   var originalMxDualRuler = mxDualRuler;
-  mxDualRuler = function(editorUI, unit) {
+  mxDualRuler = function (editorUI, unit) {
     originalMxDualRuler.apply(this, arguments);
     $([this.hRuler.container, this.vRuler.container]).appendTo(editorUI.container);
   };
@@ -1149,8 +1152,17 @@ define('diagram-editor', [
   mxDualRuler.prototype.constructor = mxDualRuler;
 
   var themes = {};
-  var getDiagramEditorConfig = function(container) {
-    var input = $(container).children('input.diagram-content');
+  var getDiagramEditorConfig = function (container) {
+    const urlParams = new URLSearchParams(window.location.search);
+    var input = null;
+    if (urlParams.get("inline")) {
+      console.log(urlParams.get('id'))
+      input = $(window.parent.document.querySelector(`input[class="${urlParams.get("id")}"]`));
+
+    }
+    else {
+      input = $(container).children('input.diagram-content')
+    };
     var documentReference = input.data('reference') || '';
     if (typeof documentReference === 'string') {
       documentReference = XWiki.Model.resolve(documentReference, XWiki.EntityType.DOCUMENT,
@@ -1172,16 +1184,16 @@ define('diagram-editor', [
   //
   // jQuery plugin
   //
-  $.fn.editDiagram = function(options) {
-    return this.on('click', 'button', function(event) {
+  $.fn.editDiagram = function (options) {
+    return this.on('click', 'button', function (event) {
       // Make sure the buttons from the editor UI don't submit the edit form.
       event.preventDefault();
-    }).on('keydown keyup keypress', '.geContentEditable', function(event) {
+    }).on('keydown keyup keypress', '.geContentEditable', function (event) {
       // Make sure the keyboard events triggered from the nested editable sections are not propagated as they may
       // trigger shortcut keys (the nested editable sections need to behave like input fields).
       // See issue #15: If you install XWebIDE Application you can't use "W" letter in the diagram text.
       event.stopPropagation();
-    }).each(function() {
+    }).each(function () {
       // We need this CSS class on the body element in order to have proper styling for the UI elements (menus, dialogs,
       // tooltips) that are added directly under the body element.
       $(document.body).addClass('geEditor');
@@ -1190,7 +1202,7 @@ define('diagram-editor', [
     });
   };
 
-  return diagramUtils.loadTranslationAndTheme().done(function(theme) {
+  return diagramUtils.loadTranslationAndTheme().done(function (theme) {
     // Configure the default editor theme.
     themes[Graph.prototype.defaultThemeName] = theme;
   });
