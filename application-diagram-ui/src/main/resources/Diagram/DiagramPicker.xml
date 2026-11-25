@@ -39,33 +39,36 @@
   <content>{{velocity}}
 #macro (prepareJson, $queryResult $jsonArray)
   #foreach ($row in $queryResult)
-    #set ($type = $row.get(2))
-    #set ($fullReference = $NULL)
-    #set ($prettyName = $NULL)
-    #if ("$type" == "ATTACHMENT")
-      #set ($attachmentParent = $xwiki.getDocument($row.get(0)))
-      #set ($attachment = $attachmentParent.getAttachment($row.get(1)))
-      #set ($fullReference = $services.model.serialize($attachment.getReference()))
-    #else
-      #set ($fullReference = $row.get(0))
+    #if ($services.security.authorization.hasAccess('view', $services.model.resolveDocument($row.get(0))))
+      #set ($type = $row.get(2))
+      #set ($fullReference = $NULL)
+      #set ($prettyName = $NULL)
+      #if ("$type" == "ATTACHMENT")
+        #set ($attachmentParent = $xwiki.getDocument($row.get(0)))
+        #set ($attachment = $attachmentParent.getAttachment($row.get(1)))
+        #set ($fullReference = $services.model.serialize($attachment.getReference()))
+      #else
+        #set ($fullReference = $row.get(0))
+      #end
+      #set ($discard = $jsonArray.add({
+        'label' : $fullReference,
+        'value': $fullReference,
+        'icon' : {
+          'iconSetName': '',
+          'iconSetType': 'FONT',
+          'cssClass': '',
+          'url': ''
+       },
+       'hint' : $row.get(1)
+     }))
     #end
-    #set ($discard = $jsonArray.add({
-      'label' : $fullReference,
-      'value': $fullReference,
-      'icon' : {
-        'iconSetName': '',
-        'iconSetType': 'FONT',
-        'cssClass': '',
-        'url': ''
-     },
-     'hint' : $row.get(1)
-   }))
   #end
 #end
 
-#set ($filter = "$!request.filter")
 #if ($xcontext.action == 'get')
-  #set ($filter = $filter.toLowerCase())
+  #set ($filter = "$!request.filter")
+  #set ($escapedFilter = $filter.toLowerCase().replace('\', '\\').replace('%', '\%').replace('_', '\_'))
+  #set ($filterLike = "%${escapedFilter}%")
   ## When we attempt to search for inline diagram, we search after
   ## the attachment name and the document reference.
   #set ($hql = "select
@@ -79,10 +82,10 @@
     ON
       att.docId = doc.id
     WHERE
-         lower(att.filename) like '%$filter%.diagram.xml'
-      or lower(att.filename) like '%$filter%.drawio'
-      or (lower(doc.fullName) like '%$filter%' and (
-           lower(att.filename) like '%.diagram.xml'
+      lower(att.filename) like concat(:filter, '.diagram.xml')
+      or lower(att.filename) like concat(:filter, '.drawio')
+      or (lower(doc.fullName) like :filter and (
+        lower(att.filename) like '%.diagram.xml'
         or lower(att.filename) like '%.drawio'
       ))
   ")
@@ -96,11 +99,12 @@
     WHERE
       doc.fullName = diagramObject.name
       and diagramObject.className = 'Diagram.DiagramClass'
-      and doc.title like '%$filter%'
+      and lower(doc.title) like :filter
       and doc.fullName &lt;&gt; 'Diagram.DiagramTemplate'
   ")
-  #set ($result = $services.query.hql($hql).setLimit(5).execute())
-  #set ($result2 = $services.query.hql($hql2).setLimit(5).execute())
+  ## The results will be filtered further because of rights, so we use a bigger limit.
+  #set ($result = $services.query.hql($hql).bindValue('filter', $filterLike).setLimit(10).execute())
+  #set ($result2 = $services.query.hql($hql2).bindValue('filter', $filterLike).setLimit(10).execute())
   #set ($jsonArray = [])
   #prepareJson($result, $jsonArray)
   #prepareJson($result2, $jsonArray)
