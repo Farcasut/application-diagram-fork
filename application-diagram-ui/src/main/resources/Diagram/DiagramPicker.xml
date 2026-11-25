@@ -102,6 +102,7 @@
       and lower(doc.title) like :filter
       and doc.fullName &lt;&gt; 'Diagram.DiagramTemplate'
   ")
+  ## The results will be filtered further because of rights, so we use a bigger limit.
   #set ($result = $services.query.hql($hql).bindValue('filter', $filterLike).setLimit(10).execute())
   #set ($result2 = $services.query.hql($hql2).bindValue('filter', $filterLike).setLimit(10).execute())
   #set ($jsonArray = [])
